@@ -177,7 +177,7 @@
 <body>
 
   <div class="controls">
-    <div class="browse-group" title="Rearrange, Rotate, Edit, Delete, and Merge PDF Pages">
+    <div class="browse-group">
       <span id="title"><a href="https://github.com/MinhasKamal/PDFSalon" target="_blank">PDF Salon</a></span>
       <label for="pdf-upload" id="browse-btn" class="btn" title="Add PDF Files">Add...</label>
       <input type="file" id="pdf-upload" accept="application/pdf" multiple>
@@ -188,7 +188,9 @@
     </div>
   </div>
 
-  <div id="page-container"><div class="empty-state" id="empty-state">No PDFs loaded.</div></div>
+  <div id="page-container">
+	  <div class="empty-state" id="empty-state">Edit and merge multiple PDF files. Also, rearrange, rotate, and delete Pages."</div>
+  </div>
   <div class="loading-overlay" id="loading-overlay">Rendering...</div>
 
   <!-- Modal -->
