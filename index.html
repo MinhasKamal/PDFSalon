@@ -180,7 +180,7 @@
     <div class="browse-group">
       <span id="title"><a href="https://github.com/MinhasKamal/PDFSalon" target="_blank">PDF Salon</a></span>
       <label for="pdf-upload" id="browse-btn" class="btn" title="Add PDF Files">Add...</label>
-      <input type="file" id="pdf-upload" accept="application/pdf" multiple>
+      <input type="file" id="pdf-upload" accept="application/pdf, image/png, image/jpeg" multiple>
     </div>
     <div class="actions-group">
       <button id="theme-toggle" class="btn" title="Toggle Theme">☀️</button>
@@ -291,11 +291,37 @@
       if (files.length === 0) return;
       if (emptyState) emptyState.style.display = 'none';
       exportBtn.disabled = true; loadingOverlay.style.display = 'flex';
-
+    
       for (const file of files) {
-        if (file.type === 'application/pdf') {
-          try {
-            const arrayBuffer = await file.arrayBuffer();
+        try {
+          let arrayBuffer = await file.arrayBuffer();
+    
+          // --- NEW IMAGE CONVERSION LOGIC ---
+          if (file.type.startsWith('image/')) {
+            const tempPdf = await PDFLib.PDFDocument.create();
+            let embeddedImg;
+            
+            if (file.type === 'image/jpeg') {
+              embeddedImg = await tempPdf.embedJpg(arrayBuffer);
+            } else if (file.type === 'image/png') {
+              embeddedImg = await tempPdf.embedPng(arrayBuffer);
+            } else {
+              continue; // Unsupported image type
+            }
+            
+            const imgDims = embeddedImg.scale(1);
+            const page = tempPdf.addPage([imgDims.width, imgDims.height]);
+            page.drawImage(embeddedImg, {
+              x: 0, y: 0, width: imgDims.width, height: imgDims.height
+            });
+            
+            // Overwrite the arrayBuffer with the new PDF byte array
+            arrayBuffer = await tempPdf.save();
+          }
+          // ----------------------------------
+    
+          // Proceed with normal PDF loading (handles both actual PDFs and converted images)
+          if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
             const pdfLibDoc = await PDFLib.PDFDocument.load(arrayBuffer);
             const pdfJsDoc = await pdfjsLib.getDocument(new Uint8Array(arrayBuffer)).promise;
             
@@ -303,12 +329,15 @@
             loadedDocuments[docId] = { pdfLib: pdfLibDoc, pdfJs: pdfJsDoc };
             await renderVisualBlocks(pdfJsDoc, docId, file.name, colorPalette[docIdCounter % colorPalette.length]);
             docIdCounter++;
-          } catch (error) { alert(`Error loading ${file.name}.`); }
+          }
+        } catch (error) { 
+          alert(`Error loading ${file.name}.`); 
+          console.error(error);
         }
       }
       loadingOverlay.style.display = 'none'; exportBtn.disabled = false; uploadInput.value = ''; 
     });
-
+    
     async function renderVisualBlocks(pdfJsDoc, docId, fileName, color) {
       for (let i = 1; i <= pdfJsDoc.numPages; i++) {
         const page = await pdfJsDoc.getPage(i);
