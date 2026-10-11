@@ -54,9 +54,9 @@
     }
     .btn:hover { opacity: 0.8; }
 
-  button { font-family: inherit; font-weight: inherit; font-size: inherit; }
+    button { font-family: inherit; font-weight: inherit; font-size: inherit; }
 
-  #browse-btn { padding: 0.7rem 1rem; }
+    #browse-btn { padding: 0.7rem 1rem; }
 
     #export-btn { background-color: var(--primary); color: white; padding: 0.75rem 1.5rem; }
     #export-btn:hover:not(:disabled) { background-color: var(--primary-hover); }
@@ -165,8 +165,8 @@
     .overlay-img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
     
     .overlay-close {
-      position: absolute; top: -12px; right: -12px; background: var(--danger); color: white; border-radius: 50%;
-      width: 24px; height: 24px; font-size: 14px; display: none; align-items: center; justify-content: center; cursor: pointer;
+      position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; border-radius: 50%;
+      width: 12px; height: 12px; font-size: 8px; display: none; align-items: center; justify-content: center; cursor: pointer;
     }
     .overlay-item.active .overlay-close, .overlay-item:hover .overlay-close { display: flex; }
       
@@ -260,8 +260,11 @@
     const loadedDocuments = {};
     let docIdCounter = 0; let draggedElement = null;
     let currentEditPageDiv = null; let activeOverlay = null; 
+    
+    let lastUsedColor = '#1040F0';
+    let lastUsedFontSize = 24;
 
-    const colorPalette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6'];
+    const colorPalette = ['#4080F0', '#10C070', '#f0A000', '#F04040', '#9060F0', '#F050A0', '#10C0A0'];
 
     function visualToNormal(vX, vY, rot) {
       if (rot === 90) return { x: vY, y: 1 - vX };
@@ -278,6 +281,29 @@
     function hexToRgb(hex) {
       const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
       return result ? { r: parseInt(result[1], 16) / 255, g: parseInt(result[2], 16) / 255, b: parseInt(result[3], 16) / 255 } : { r: 0.93, g: 0.26, b: 0.26 };
+    }
+    function getVisibleCenter() {
+      const wrapperRect = previewWrapper.getBoundingClientRect();
+      const modalContent = document.querySelector('.modal-content');
+      const modalRect = modalContent.getBoundingClientRect();
+
+      // 1. Find the center pixel of the visible scroll area
+      const clientCenterX = modalRect.left + (modalRect.width / 2);
+      const clientCenterY = modalRect.top + (modalRect.height / 2);
+
+      // 2. Map that screen pixel to the PDF wrapper's internal coordinates
+      const pxX = clientCenterX - wrapperRect.left;
+      const pxY = clientCenterY - wrapperRect.top;
+
+      // 3. Convert to normalized percentages (0.0 to 1.0)
+      let vX = pxX / wrapperRect.width;
+      let vY = pxY / wrapperRect.height;
+
+      // 4. Clamp the values between 10% and 90% so they never spawn off the edge
+      vX = Math.max(0.1, Math.min(0.9, vX));
+      vY = Math.max(0.1, Math.min(0.9, vY));
+
+      return { vX, vY };
     }
 
     const pdfLibFontMap = {
@@ -544,6 +570,7 @@
       let val = parseInt(e.target.value);
       if (isNaN(val) || val < 0) val = 0;
       activeOverlay.dataset.fontSize = val; activeOverlay.querySelector('span').style.fontSize = val + 'px';
+      lastUsedFontSize = val;
     };
 
     propSizeImg.oninput = (e) => {
@@ -554,7 +581,11 @@
 
     propColor.oninput = (e) => {
       if(activeOverlay && (activeOverlay.classList.contains('text-overlay-item') || activeOverlay.classList.contains('symbol-overlay-item'))) {
-        activeOverlay.dataset.color = e.target.value; activeOverlay.querySelector('span').style.color = e.target.value;
+        activeOverlay.dataset.color = e.target.value; 
+        activeOverlay.querySelector('span').style.color = e.target.value;
+        const svg = activeOverlay.querySelector('svg');
+        if (svg) svg.style.fill = e.target.value;
+        lastUsedColor = e.target.value; 
       }
     };
 
@@ -568,9 +599,10 @@
     propSymbol.onchange = (e) => {
       if (activeOverlay && activeOverlay.classList.contains('symbol-overlay-item')) {
         activeOverlay.dataset.symbolValue = e.target.value;
-        activeOverlay.querySelector('span').innerText = e.target.value === '4' ? '✔' : '✖';
+        activeOverlay.querySelector('span').innerHTML = getSymbolSvg(e.target.value, activeOverlay.dataset.color || '#ef4444');
       }
     };
+
 
     const toggleProp = (btn, prop, cssProp, cssTrue, cssFalse) => {
       btn.onclick = () => {
@@ -616,9 +648,8 @@
           el.style.lineHeight = '1';
 
           if (ov.type === 'symbol') {
-            // Translate the ZapfDingbats value back to standard DOM emojis for the thumbnail
-            el.innerText = ov.value === '4' ? '✔' : '✖';
-            el.style.fontFamily = 'sans-serif';
+            el.innerHTML = getSymbolSvg(ov.value, ov.color);
+            el.style.display = 'inline-flex';
           } else {
             // Standard text handling
             el.innerText = ov.value; 
@@ -637,19 +668,42 @@
       });
     }
 
-    document.getElementById('add-text-btn').onclick = () => { const text = prompt("Enter text:"); if(text) addDraggableOverlay(text, 'text', 0.5, 0.5, 0); };
+    document.getElementById('add-text-btn').onclick = () => { 
+      const text = prompt("Enter text:"); 
+      if(text) {
+        const center = getVisibleCenter();
+        addDraggableOverlay(text, 'text', center.vX, center.vY, 0, lastUsedFontSize, lastUsedColor); 
+      }
+    };
+
     document.getElementById('add-image-btn').onclick = () => document.getElementById('overlay-img-upload').click();
-    document.getElementById('add-symbol-btn').onclick = () => addDraggableOverlay('4', 'symbol', 0.5, 0.5, 0);
+
+    document.getElementById('add-symbol-btn').onclick = () => {
+      const center = getVisibleCenter();
+      addDraggableOverlay('tick', 'symbol', center.vX, center.vY, 0, lastUsedFontSize, lastUsedColor); 
+    };
 
     document.getElementById('overlay-img-upload').onchange = (e) => {
       const file = e.target.files[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = (e) => addDraggableOverlay(e.target.result, 'image', 0.5, 0.5, 0);
+        reader.onload = (e) => {
+          const center = getVisibleCenter();
+          addDraggableOverlay(e.target.result, 'image', center.vX, center.vY, 0);
+        };
         reader.readAsDataURL(file);
       }
       e.target.value = ''; 
     };
+
+
+    function getSymbolSvg(value, color) {
+      const isCross = String(value) === '8' || String(value).includes('✖');
+      const path = isCross 
+        ? 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'
+        : 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z';
+      return `\<svg viewBox="0 0 24 24" width="1em" height="1em" style="fill: ${color || '#ef4444'}; display: block;">\<path d="${path}">\</path>\</svg>`;
+    }
 
     function addDraggableOverlay(content, type, vX, vY, vRot, fontSize = 24, color = '#ef4444', widthPx = 150, heightPx = null, fontFamily = 'Helvetica', isBold = false, isItalic = false, isUnderline = false) {
       const wrapper = document.createElement('div');
@@ -665,9 +719,9 @@
         span.style.fontSize = fontSize + 'px'; span.style.color = color;
         
         if (type === 'symbol') {
-          span.innerText = content === '4' ? '✔' : '✖';
-          span.style.fontFamily = 'sans-serif';
-          wrapper.dataset.symbolValue = content; // '4' or '8'
+          span.innerHTML = getSymbolSvg(content, color);
+          span.style.display = 'inline-flex';
+          wrapper.dataset.symbolValue = content;
         } else {
           span.innerText = content;
           span.style.fontFamily = fontFamily === 'TimesRoman' ? '"Times New Roman", Times, serif' : fontFamily === 'Courier' ? 'monospace' : 'Arial, Helvetica, sans-serif';
@@ -721,11 +775,9 @@
 
     exportBtn.addEventListener('click', async () => {
       exportBtn.textContent = 'Processing...'; exportBtn.disabled = true;
-
       try {
         const remainingItems = [...pageContainer.querySelectorAll('.page-item')];
         const mergedPdf = await PDFLib.PDFDocument.create();
-        const symbolFont = await mergedPdf.embedFont(PDFLib.StandardFonts.ZapfDingbats);
         
         for (const item of remainingItems) {
           const docId = item.dataset.docId;
@@ -735,8 +787,8 @@
           const inherentRot = copiedPage.getRotation().angle;
           const userRotation = parseInt(item.dataset.rotation, 10);
           copiedPage.setRotation(PDFLib.degrees((inherentRot + userRotation) % 360));
-
           const overlays = JSON.parse(item.dataset.overlays || "[]");
+          
           if (overlays.length > 0) {
             const { width: pdfW, height: pdfH } = copiedPage.getSize();
             
@@ -745,34 +797,34 @@
               const pdfX = ov.normX * pdfW;
               const pdfY = (1 - ov.normY) * pdfH;
               
-              if (ov.type === 'text' || ov.type === 'symbol') {
-                const rgb = hexToRgb(ov.color);
+              if (ov.type === 'text') {
+                const rgb = hexToRgb(ov.color || '#ef4444');
+                const textValue = String(ov.value || ' ');
                 
-                let customFont;
-                if (ov.type === 'symbol') {
-                  customFont = symbolFont;
-                } else {
-                  let fontStyleStr = 'normal';
-                  if (ov.isBold && ov.isItalic) fontStyleStr = 'boldItalic';
-                  else if (ov.isBold) fontStyleStr = 'bold';
-                  else if (ov.isItalic) fontStyleStr = 'italic';
-                  customFont = await mergedPdf.embedFont(pdfLibFontMap[ov.fontFamily || 'Helvetica'][fontStyleStr]);
-                }
+                let fontStyleStr = 'normal';
+                if (ov.isBold && ov.isItalic) fontStyleStr = 'boldItalic';
+                else if (ov.isBold) fontStyleStr = 'bold';
+                else if (ov.isItalic) fontStyleStr = 'italic';
+                const customFont = await mergedPdf.embedFont(pdfLibFontMap[ov.fontFamily || 'Helvetica'][fontStyleStr]);
                 
-                const pdfSize = ov.normSizePct * pdfH;
-                const textW = customFont.widthOfTextAtSize(ov.value, pdfSize);
+                const pdfSize = Number(ov.normSizePct || 0.05) * pdfH;
+                
+                let textW = pdfSize; 
+                try { textW = customFont.widthOfTextAtSize(textValue, pdfSize); } catch (e) {}
                 
                 const blX_offset = -textW / 2;
                 const blY_offset = -(pdfSize * 0.25); 
                 
                 const blX = pdfX + blX_offset * Math.cos(theta) - blY_offset * Math.sin(theta);
                 const blY = pdfY + blX_offset * Math.sin(theta) + blY_offset * Math.cos(theta);
-
-                copiedPage.drawText(ov.value, {
-                  x: blX, y: blY, size: pdfSize, font: customFont, 
-                  color: PDFLib.rgb(rgb.r, rgb.g, rgb.b), rotate: PDFLib.degrees(-ov.normRot)
-                });
-
+                
+                try {
+                  copiedPage.drawText(textValue, {
+                    x: blX, y: blY, size: pdfSize, font: customFont, 
+                    color: PDFLib.rgb(rgb.r, rgb.g, rgb.b), rotate: PDFLib.degrees(-ov.normRot)
+                  });
+                } catch (e) { console.error("Text draw error:", e); }
+                
                 if(ov.isUnderline) {
                   const lineOffset = pdfSize * 0.15;
                   const lSx = pdfX + blX_offset * Math.cos(theta) - (blY_offset - lineOffset) * Math.sin(theta);
@@ -785,20 +837,46 @@
                     thickness: Math.max(1, pdfSize * 0.05), color: PDFLib.rgb(rgb.r, rgb.g, rgb.b)
                   });
                 }
+              } else if (ov.type === 'symbol') {
+                const rgb = hexToRgb(ov.color || '#ef4444');
+                const pdfSize = Number(ov.normSizePct || 0.05) * pdfH;
+                
+                // BYPASS FONTS ENTIRELY: Use Native Vector SVG Paths
+                const valStr = String(ov.value);
+                const isCross = valStr === '8' || valStr.includes('✖');
+                const svgPath = isCross 
+                    ? 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z' // Cross Path
+                    : 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'; // Tick Path
+                
+                const scale = pdfSize / 24;
+                const halfSize = pdfSize / 2;
+                
+                // Calculate anchor to perfectly center the SVG at the user's drag coordinates
+                const blX = pdfX - halfSize * Math.cos(theta) - halfSize * Math.sin(theta);
+                const blY = pdfY - halfSize * Math.sin(theta) + halfSize * Math.cos(theta);
+                
+                try {
+                  copiedPage.drawSvgPath(svgPath, {
+                    x: blX, y: blY, scale: scale, 
+                    color: PDFLib.rgb(rgb.r, rgb.g, rgb.b), rotate: PDFLib.degrees(-ov.normRot)
+                  });
+                } catch (e) { console.error("SVG draw error:", e); }
+                
               } else if (ov.type === 'image') {
-                let embeddedImg = ov.value.includes('image/jpeg') ? await mergedPdf.embedJpg(ov.value) : await mergedPdf.embedPng(ov.value);
-                const imgW = ov.normWidthPct * pdfW;
-                const imgH = ov.normHeightPct * pdfH;
-                
-                const blX_offset = -imgW / 2;
-                const blY_offset = -imgH / 2;
-                
-                const blX = pdfX + blX_offset * Math.cos(theta) - blY_offset * Math.sin(theta);
-                const blY = pdfY + blX_offset * Math.sin(theta) + blY_offset * Math.cos(theta);
-
-                copiedPage.drawImage(embeddedImg, { 
-                  x: blX, y: blY, width: imgW, height: imgH, rotate: PDFLib.degrees(-ov.normRot) 
-                });
+                try {
+                  let embeddedImg = ov.value.includes('image/jpeg') ? await mergedPdf.embedJpg(ov.value) : await mergedPdf.embedPng(ov.value);
+                  const imgW = ov.normWidthPct * pdfW;
+                  const imgH = ov.normHeightPct * pdfH;
+                  
+                  const blX_offset = -imgW / 2;
+                  const blY_offset = -imgH / 2;
+                  
+                  const blX = pdfX + blX_offset * Math.cos(theta) - blY_offset * Math.sin(theta);
+                  const blY = pdfY + blX_offset * Math.sin(theta) + blY_offset * Math.cos(theta);
+                  copiedPage.drawImage(embeddedImg, { 
+                    x: blX, y: blY, width: imgW, height: imgH, rotate: PDFLib.degrees(-ov.normRot) 
+                  });
+                } catch (e) { console.error("Image draw error:", e); }
               }
             }
           }
@@ -811,6 +889,7 @@
       } catch (error) { alert("An error occurred during export."); console.error(error);
       } finally { exportBtn.textContent = 'Export'; exportBtn.disabled = false; }
     });
+
   </script>
 </body>
 </html>
